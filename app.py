@@ -118,7 +118,7 @@ elif st.session_state.page == "events":
     # this is my new comm
     
     # Event Search
-    st.subheader("🔍 Search Nearby Events")
+    #st.subheader("🔍 Search Nearby Events")
     keyword = st.text_input("What are you looking for? (e.g. concerts, sports, comedy)")
     radius = st.slider("Radius (miles)", min_value=5, max_value=100, value=25)
 

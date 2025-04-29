@@ -6,6 +6,10 @@ from streamlit_javascript import st_javascript
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from datetime import datetime, timedelta
+import numpy as np
+import pydeck as pdk
+from geopy.distance import geodesic
+from streamlit_javascript import st_javascript
 
 # --- Ticketmaster API Key ---
 API_KEY = "sPTGoDBnMjr6gfs9TqQYd4FomA5oDBYC"
@@ -118,7 +122,7 @@ elif st.session_state.page == "events":
     # this is my new comm
     
     # Event Search
-    #st.subheader("🔍 Search Nearby Events")
+    st.subheader("🔍 Search Nearby Events")
     keyword = st.text_input("What are you looking for? (e.g. concerts, sports, comedy)")
     radius = st.slider("Radius (miles)", min_value=5, max_value=100, value=25)
 
@@ -241,6 +245,138 @@ elif st.session_state.page == "itinerary":
 
     for item in itinerary:
         st.markdown(f"**{item['time']}** - {item['activity']}")
+
+# -------------------------- RESTAURANT PAGE --------------------
+elif st.session_state.page == "restaurant":
+    st.title("🍽️ Restaurant Recommender")
+
+    fetch_location()  # Ensure location is fetched
+
+    lat = st.session_state.location['latitude']
+    lon = st.session_state.location['longitude']
+
+    # --- Load and Prepare Data ---
+    DATA_PATH = r"C:\flutter\grubhub.csv"
+    data = pd.read_csv(DATA_PATH)
+
+    data.drop(['delivery_fee_raw', 'delivery_fee', 
+              'delivery_time_raw', 'delivery_time', 'service_fee'], 
+             axis=1, inplace=True)
+    price_categories = ['low', 'medium', 'high']
+    if 'prices' not in data.columns:
+        data['prices'] = np.random.choice(price_categories, size=len(data))
+
+    # --- TF-IDF Setup ---
+    tfidf = TfidfVectorizer(stop_words='english')
+    tfidf_matrix = tfidf.fit_transform(data['cuisines'])
+
+    def location_similarity(user_location, restaurant_location):
+        return 1 / (1 + geodesic(user_location, restaurant_location).km)
+
+    def recommend_restaurants(user_cuisine, user_lat, user_long, user_price=None, top_n=5):
+        tfidf_user = tfidf.transform([user_cuisine])
+        cuisine_sim_scores = cosine_similarity(tfidf_user, tfidf_matrix).flatten()
+
+        user_location = (user_lat, user_long)
+        location_sim_scores = np.array([
+            location_similarity(user_location, (lat, long)) 
+            for lat, long in zip(data['latitude'], data['longitude'])
+        ])
+
+        combined_scores = 0.7 * cuisine_sim_scores + 0.3 * location_sim_scores
+
+        if user_price:
+            mask = data['prices'] == user_price
+            combined_scores = combined_scores * mask
+
+        top_indices = combined_scores.argsort()[-top_n:][::-1]
+        recommended = data.iloc[top_indices][['loc_name', 'latitude', 'longitude', 'cuisines', 'review_rating', 'prices']]
+        recommended['distance_km'] = [geodesic(user_location, (lat, long)).km 
+                                      for lat, long in zip(recommended['latitude'], recommended['longitude'])]
+        return recommended
+
+    # --- Show user location on map ---
+    user_location = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+
+    layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=user_location,
+        get_position='[lon, lat]',
+        get_color='[255, 0, 0, 160]',
+        get_radius=30
+    )
+
+    view_state = pdk.ViewState(
+        latitude=lat,
+        longitude=lon,
+        zoom=12,
+        pitch=0
+    )
+
+    st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state))
+
+    # --- Recommendation Interface ---
+    with st.form("recommendation_form"):
+        user_cuisine = st.text_input("What cuisines are you craving?", "chinese italian")
+        user_price = st.selectbox("Price range", ["Any", "low", "medium", "high"])
+        top_n = st.slider("Number of recommendations", 1, 10, 5)
+        submitted = st.form_submit_button("Find Restaurants")
+
+    recommendations = None  # Initialize as None
+
+    if submitted:
+        recommendations = recommend_restaurants(
+            user_cuisine, lat, lon,
+            user_price if user_price != "Any" else None,
+            top_n
+        )
+
+    # --- Show Cuisines as Chips ---
+    if submitted and user_cuisine:
+        st.subheader("You're craving:")
+        cuisine_list = [c.strip().capitalize() for c in user_cuisine.split()]
+        cols = st.columns(len(cuisine_list))
+        for idx, cuisine in enumerate(cuisine_list):
+            with cols[idx]:
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 8px 12px; border-radius: 20px; text-align: center; font-weight: 600; color: #000000;">
+                {cuisine}
+                </div>
+                """, unsafe_allow_html=True)
+
+    if recommendations is not None and not recommendations.empty:
+        st.subheader("Top Recommendations")
+
+        for idx, row in recommendations.iterrows():
+            st.markdown(f"""
+            <div class="card">
+                <div class="card-left">
+                    📍
+                </div>
+                <div class="card-right">
+                    <h3>🍴 {row['loc_name']}</h3>
+                    <p><strong>Cuisines:</strong> {row['cuisines']}</p>
+                    <p><strong>Rating:</strong> ⭐ {row['review_rating']}</p>
+                    <p><strong>Price:</strong> 💵 {row['prices']}</p>
+                    <p><strong>Distance:</strong> 📍 {row['distance_km']:.2f} km</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        st.subheader("📋 Summary Table")
+        st.dataframe(
+            recommendations[['loc_name', 'cuisines', 'review_rating', 'prices', 'distance_km']].rename(
+                columns={
+                    "loc_name": "Restaurant",
+                    "cuisines": "Cuisines",
+                    "review_rating": "Rating",
+                    "prices": "Price",
+                    "distance_km": "Distance (km)"
+                }
+            )
+        )
+    elif submitted:
+        st.warning("No recommendations found for your criteria.")
 
 # ---------------------------- Navigation ----------------------------
 else:

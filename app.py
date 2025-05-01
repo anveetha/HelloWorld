@@ -251,16 +251,22 @@ elif st.session_state.page == "itinerary":
 elif st.session_state.page == "restaurant":
     st.title("🍽️ Restaurant Recommender")
 
-    fetch_location()  # Ensure location is fetched
+    fetch_location()  # Ensure location is fetched and stored in session state
+
+    if "location" not in st.session_state:
+        st.warning("📍 Location not available. Please allow location access from the Home page.")
+        st.stop()
 
     lat = st.session_state.location['latitude']
     lon = st.session_state.location['longitude']
+    full_location = st.session_state.get("location_details", "Unknown Location")
+
+    st.markdown(f"📍 **You are in:** {full_location}")
 
     # --- Load and Prepare Data ---
     DATA_PATH = r"C:\Users\trinh\Downloads\grubhub.csv\grubhub.csv"
     data = pd.read_csv(DATA_PATH)
 
-    # --- Clean Data ---
     data.drop(['delivery_fee_raw', 'delivery_fee', 'delivery_time_raw', 'delivery_time', 'service_fee'], 
             axis=1, inplace=True, errors='ignore')
     price_categories = ['low', 'medium', 'high']
@@ -268,24 +274,22 @@ elif st.session_state.page == "restaurant":
         data['prices'] = np.random.choice(price_categories, size=len(data))
     data['cuisines'] = data['cuisines'].fillna('')  # Fill NaN cuisines
 
-    # --- TF-IDF Setup ---
     tfidf = TfidfVectorizer(stop_words='english')
     tfidf_matrix = tfidf.fit_transform(data['cuisines'])
 
-    # --- Functions ---
     def location_similarity(user_location, restaurant_location):
         return 1 / (1 + geodesic(user_location, restaurant_location).km)
 
     def recommend_restaurants(user_cuisine, user_lat, user_lon, user_price=None, top_n=5):
         tfidf_user = tfidf.transform([user_cuisine])
         cuisine_sim_scores = cosine_similarity(tfidf_user, tfidf_matrix).flatten()
-        
+
         user_location = (user_lat, user_lon)
         location_sim_scores = np.array([
             location_similarity(user_location, (lat, lon)) 
             for lat, lon in zip(data['latitude'], data['longitude'])
         ])
-        
+
         combined_scores = 0.7 * cuisine_sim_scores + 0.3 * location_sim_scores
 
         filtered_data = data
@@ -302,44 +306,16 @@ elif st.session_state.page == "restaurant":
         ]
         return recommended
 
-    # --- Streamlit App ---
-    # st.set_page_config(page_title="Restaurant Finder", layout="centered")
-
-    # --- Geolocation Detection ---
-    coords = st_javascript("""await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                resolve({
-                    coords: {
-                        latitude: position.coords.latitude,
-                        longitude: position.coords.longitude
-                    }
-                });
-            },
-            (error) => {
-                resolve({error: error.message});
-            }
-        );
-    });""")
-
-
-    # --- Display Location & Map ---
-    if coords and "coords" in coords:
-        lat = coords["coords"]["latitude"]
-        lon = coords["coords"]["longitude"]
-        city = st.session_state.get("city", None)
-
-        # Show user location on map
-        user_location = pd.DataFrame({'lat': [lat], 'lon': [lon]})
-        layer = pdk.Layer(
-            'ScatterplotLayer',
-            data=user_location,
-            get_position='[lon, lat]',
-            get_color='[255, 0, 0, 160]',
-            get_radius=30
-        )
-        view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=15, pitch=0)
-        st.pydeck_chart(
+    user_location_df = pd.DataFrame({'lat': [lat], 'lon': [lon]})
+    layer = pdk.Layer(
+        'ScatterplotLayer',
+        data=user_location_df,
+        get_position='[lon, lat]',
+        get_color='[255, 0, 0, 160]',
+        get_radius=30
+    )
+    view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=15, pitch=0)
+    st.pydeck_chart(
         pdk.Deck(
             map_style="mapbox://styles/mapbox/streets-v11",
             layers=[layer],
@@ -349,71 +325,65 @@ elif st.session_state.page == "restaurant":
         use_container_width=True
     )
 
-        # --- Recommendation Interface ---
-        with st.form("recommendation_form"):
-            user_cuisine = st.text_input("What cuisines are you craving?", "chinese italian")
-            user_price = st.selectbox("Price range", ["Any", "low", "medium", "high"])
-            top_n = st.slider("Number of recommendations", 1, 10, 5)
-            submitted = st.form_submit_button("Find Restaurants")
+    with st.form("recommendation_form"):
+        user_cuisine = st.text_input("What cuisines are you craving?", "chinese italian")
+        user_price = st.selectbox("Price range", ["Any", "low", "medium", "high"])
+        top_n = st.slider("Number of recommendations", 1, 10, 5)
+        submitted = st.form_submit_button("Find Restaurants")
 
-        recommendations = None
+    recommendations = None
 
-        if submitted:
-            recommendations = recommend_restaurants(
-                user_cuisine, lat, lon,
-                user_price if user_price != "Any" else None,
-                top_n
+    if submitted:
+        recommendations = recommend_restaurants(
+            user_cuisine, lat, lon,
+            user_price if user_price != "Any" else None,
+            top_n
+        )
+
+    if submitted and user_cuisine:
+        st.subheader("You're craving:")
+        cuisine_list = [c.strip().capitalize() for c in user_cuisine.split()]
+        cols = st.columns(len(cuisine_list))
+        for idx, cuisine in enumerate(cuisine_list):
+            with cols[idx]:
+                st.markdown(f"""
+                <div style="background-color: #f0f2f6; padding: 8px 12px; border-radius: 20px; text-align: center; font-weight: 600; color: #000000">
+                    {cuisine}
+                </div>
+                """, unsafe_allow_html=True)
+
+    if recommendations is not None and not recommendations.empty:
+        st.subheader("Top Recommendations")
+        for idx, row in recommendations.iterrows():
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                st.map(pd.DataFrame({'lat': [row['latitude']], 'lon': [row['longitude']]}), zoom=15, use_container_width=True)
+            with col2:
+                st.markdown(f"""
+                <div style="background-color: #ffffff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);  color: #000000">
+                    <h3>🍴 {row['loc_name']}</h3>
+                    <p><strong>Cuisines:</strong> {row['cuisines']}</p>
+                    <p><strong>Rating:</strong> ⭐ {row['review_rating']}</p>
+                    <p><strong>Price:</strong> 💵 {row['prices']}</p>
+                    <p><strong>Distance:</strong> 📍 {row['distance_km']:.2f} km</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+        st.subheader("📋 Summary Table")
+        st.dataframe(
+            recommendations[['loc_name', 'cuisines', 'review_rating', 'prices', 'distance_km']].rename(
+                columns={
+                    "loc_name": "Restaurant",
+                    "cuisines": "Cuisines",
+                    "review_rating": "Rating",
+                    "prices": "Price",
+                    "distance_km": "Distance (km)"
+                }
             )
+        )
+    elif submitted:
+        st.warning("No recommendations found for your criteria.")
 
-        # --- Show Cuisines as Small Cards ---
-        if submitted and user_cuisine:
-            st.subheader("You're craving:")
-            cuisine_list = [c.strip().capitalize() for c in user_cuisine.split()]
-            cols = st.columns(len(cuisine_list))
-            for idx, cuisine in enumerate(cuisine_list):
-                with cols[idx]:
-                    st.markdown(f"""
-                    <div style="background-color: #f0f2f6; padding: 8px 12px; border-radius: 20px; text-align: center; font-weight: 600; color: #000000">
-                        {cuisine}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-        # --- Show Recommendations ---
-        if recommendations is not None and not recommendations.empty:
-            st.subheader("Top Recommendations")
-
-            for idx, row in recommendations.iterrows():
-                col1, col2 = st.columns([1, 3])
-
-                with col1:
-                    st.map(pd.DataFrame({'lat': [row['latitude']], 'lon': [row['longitude']]}), zoom=15, use_container_width=True)
-
-                with col2:
-                    st.markdown(f"""
-                    <div style="background-color: #ffffff; border-radius: 12px; padding: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);  color: #000000">
-                        <h3>🍴 {row['loc_name']}</h3>
-                        <p><strong>Cuisines:</strong> {row['cuisines']}</p>
-                        <p><strong>Rating:</strong> ⭐ {row['review_rating']}</p>
-                        <p><strong>Price:</strong> 💵 {row['prices']}</p>
-                        <p><strong>Distance:</strong> 📍 {row['distance_km']:.2f} km</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-            
-            st.subheader("📋 Summary Table")
-            st.dataframe(
-                recommendations[['loc_name', 'cuisines', 'review_rating', 'prices', 'distance_km']].rename(
-                    columns={
-                        "loc_name": "Restaurant",
-                        "cuisines": "Cuisines",
-                        "review_rating": "Rating",
-                        "prices": "Price",
-                        "distance_km": "Distance (km)"
-                    }
-                )
-            )
-        
-        elif submitted:
-            st.warning("No recommendations found for your criteria.")
 
 # ---------------------------- Navigation ----------------------------
 else:

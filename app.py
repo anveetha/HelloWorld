@@ -88,14 +88,10 @@ elif st.session_state.page == "events":
 
     fetch_location()  # Ensure location is fetched on this page
 
-    #if "location" not in st.session_state:
-    #    st.error("⚠️ Location not set. Please go to the Home page first to allow location access.")
-    #    st.stop()
-
+    # Ensure location is available
     lat = st.session_state.location['latitude']
     lon = st.session_state.location['longitude']
     city = st.session_state.get("city", None)
-
 
     # Map display: ----------------------------------------------
     user_location = pd.DataFrame({'lat': [lat], 'lon': [lon]})
@@ -110,18 +106,15 @@ elif st.session_state.page == "events":
 
     view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=15, pitch=0)
     st.pydeck_chart(
-    pdk.Deck(
-        map_style="mapbox://styles/mapbox/streets-v11",
-        layers=[layer],
-        initial_view_state=view_state,
-        tooltip={"text": "You are here"}
-    ),
-    use_container_width=True
-)
+        pdk.Deck(
+            map_style="mapbox://styles/mapbox/streets-v11",
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip={"text": "You are here"}
+        ),
+        use_container_width=True
+    )
 
-    #
-   
-    
     # Event Search
     st.subheader("🔍 Search Nearby Events")
     keyword = st.text_input("What are you looking for? (e.g. concerts, sports, comedy)")
@@ -143,7 +136,12 @@ elif st.session_state.page == "events":
 
             if events:
                 st.success(f"Found {len(events)} event(s) near you!")
-                for event in events:
+
+                # Sort events by date (closest first)
+                sorted_events = sorted(events, key=lambda x: x["dates"]["start"].get("localDate"))
+
+                # Display sorted events
+                for event in sorted_events:
                     name = event.get("name")
                     venue = event["_embedded"]["venues"][0]["name"]
                     date = event["dates"]["start"].get("localDate")

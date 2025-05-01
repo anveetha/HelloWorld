@@ -109,17 +109,18 @@ elif st.session_state.page == "events":
     )
 
     view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=15, pitch=0)
-    st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state))
+    st.pydeck_chart(
+    pdk.Deck(
+        map_style="mapbox://styles/mapbox/streets-v11",
+        layers=[layer],
+        initial_view_state=view_state,
+        tooltip={"text": "You are here"}
+    ),
+    use_container_width=True
+)
+
     #
-    #st.pydeck_chart(
-    #pdk.Deck(
-    #    layers=[layer],
-    #    initial_view_state=view_state
-    #),
-    #use_container_width=True  # This makes the map responsive
-    #)
-    #--------------------------------------------------------------
-    # this is my new comm
+   
     
     # Event Search
     st.subheader("🔍 Search Nearby Events")
@@ -303,7 +304,6 @@ elif st.session_state.page == "restaurant":
 
     # --- Streamlit App ---
     # st.set_page_config(page_title="Restaurant Finder", layout="centered")
-    st.title("🍽️ Restaurant Recommender")
 
     # --- Geolocation Detection ---
     coords = st_javascript("""await new Promise((resolve, reject) => {
@@ -322,11 +322,12 @@ elif st.session_state.page == "restaurant":
         );
     });""")
 
+
     # --- Display Location & Map ---
     if coords and "coords" in coords:
         lat = coords["coords"]["latitude"]
         lon = coords["coords"]["longitude"]
-        st.success(f"📍 Location detected: {lat:.4f}, {lon:.4f}")
+        city = st.session_state.get("city", None)
 
         # Show user location on map
         user_location = pd.DataFrame({'lat': [lat], 'lon': [lon]})
@@ -337,8 +338,16 @@ elif st.session_state.page == "restaurant":
             get_color='[255, 0, 0, 160]',
             get_radius=30
         )
-        view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=12, pitch=0)
-        st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view_state))
+        view_state = pdk.ViewState(latitude=lat, longitude=lon, zoom=15, pitch=0)
+        st.pydeck_chart(
+        pdk.Deck(
+            map_style="mapbox://styles/mapbox/streets-v11",
+            layers=[layer],
+            initial_view_state=view_state,
+            tooltip={"text": "You are here"}
+        ),
+        use_container_width=True
+    )
 
         # --- Recommendation Interface ---
         with st.form("recommendation_form"):

@@ -262,7 +262,7 @@ elif st.session_state.page == "restaurant":
     st.markdown(f"📍 **You are in:** {full_location}")
 
     # --- Load and Prepare Data ---
-    DATA_PATH = r"C:\Users\trinh\Downloads\grubhub.csv\grubhub.csv"
+    DATA_PATH = r"C:\flutter\grubhub.csv"
     data = pd.read_csv(DATA_PATH)
 
     data.drop(['delivery_fee_raw', 'delivery_fee', 'delivery_time_raw', 'delivery_time', 'service_fee'], 
@@ -430,6 +430,5 @@ st.markdown("""
         <a href="?page=events">Events</a>
         <a href="?page=restaurant">Restaurant</a>
         <a href="?page=itinerary">AI Itinerary</a>
-        <a href="?page=settings">Settings</a>
     </div>
 """, unsafe_allow_html=True)
